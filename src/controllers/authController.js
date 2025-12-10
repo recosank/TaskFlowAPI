@@ -59,10 +59,11 @@ export async function login(req, res, next) {
     await prisma.refreshToken.create({
       data: { token: refreshToken, userId: user.id, expiresAt },
     });
+    const isProd = process.env.NODE_ENV === "production";
     res.cookie("jid", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       path: "/api/auth/refresh",
       maxAge: REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
     });
