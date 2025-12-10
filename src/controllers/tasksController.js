@@ -21,23 +21,14 @@ export async function getDashboardTasks(req, res, next) {
   try {
     const userId = Number(req.user.id);
 
-    const aggregation = await prisma.project.groupBy({
-      by: ["ownerId"],
+    const userProjects = await prisma.project.findMany({
       where: { ownerId: userId },
-      _count: {
-        id: true,
-        tasks: {
-          where: { status: "pending" },
-        },
-      },
-      _sum: {
-        tasks: {
-          _count: true,
-        },
-      },
+      select: { id: true },
     });
 
-    if (aggregation.length === 0) {
+    const projectIds = userProjects.map((project) => project.id);
+
+    if (projectIds.length === 0) {
       return res.json({
         totalTasks: 0,
         todo: 0,
@@ -49,25 +40,30 @@ export async function getDashboardTasks(req, res, next) {
       });
     }
 
-    const userAgg = aggregation[0];
-
-    const [inprogressCount, completedCount] = await Promise.all([
-      prisma.task.count({
-        where: {
-          project: { ownerId: userId },
-          status: "inprogress",
-        },
-      }),
-      prisma.task.count({
-        where: {
-          project: { ownerId: userId },
-          status: "done",
-        },
-      }),
-    ]);
-
-    const totalTasks = userAgg._sum.tasks?._count || 0;
-    const todoCount = userAgg._count.tasks || 0;
+    const [totalTasks, todoCount, inprogressCount, completedCount] =
+      await Promise.all([
+        prisma.task.count({
+          where: { projectId: { in: projectIds } },
+        }),
+        prisma.task.count({
+          where: {
+            projectId: { in: projectIds },
+            status: "pending",
+          },
+        }),
+        prisma.task.count({
+          where: {
+            projectId: { in: projectIds },
+            status: "inprogress",
+          },
+        }),
+        prisma.task.count({
+          where: {
+            projectId: { in: projectIds },
+            status: "done",
+          },
+        }),
+      ]);
 
     const pending = todoCount + inprogressCount;
     const progressPercent =
@@ -80,13 +76,12 @@ export async function getDashboardTasks(req, res, next) {
       completed: completedCount,
       pending,
       progressPercent,
-      projectCount: userAgg._count.id,
+      projectCount: projectIds.length,
     });
   } catch (err) {
     next(err);
   }
 }
-
 export async function createTask(req, res, next) {
   try {
     const { projectId, title, description, priority, status, dueDate } =
