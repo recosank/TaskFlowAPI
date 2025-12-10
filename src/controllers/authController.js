@@ -27,13 +27,13 @@ export async function signUp(req, res, next) {
     await prisma.refreshToken.create({
       data: { token: refreshToken, userId: user.id, expiresAt },
     });
-    const isProd = process.env.NODE_ENV === "production";
+    // const isProd = process.env.NODE_ENV === "production";
 
     res.cookie("jid", refreshToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
-      path: "/",
+      secure: true,
+      sameSite: "none",
+      path: "/api/auth/refresh",
       maxAge: REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
     });
     res.status(201).json({
@@ -62,8 +62,8 @@ export async function login(req, res, next) {
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("jid", refreshToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
+      secure: true,
+      sameSite: "none",
       path: "/api/auth/refresh",
       maxAge: REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
     });

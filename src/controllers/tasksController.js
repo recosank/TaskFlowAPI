@@ -4,14 +4,12 @@ import { HttpError } from "../utils/errorHandler.js";
 export async function listTasks(req, res, next) {
   try {
     const projectId = Number(req.params.projectId);
-
+    const userId = Number(req.user.id);
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
+      where: { id: projectId, ownerId: userId },
     });
-    if (!project) throw new HttpError(404, "project not found");
-    if (project.ownerId !== Number(req.user.id))
-      throw new HttpError(403, "Forbidden");
-
+    if (!project)
+      throw new HttpError(404, "project not found or access denied");
     const tasks = await prisma.task.findMany({ where: { projectId } });
     res.json(tasks);
   } catch (err) {
@@ -21,13 +19,55 @@ export async function listTasks(req, res, next) {
 
 export async function getDashboardTasks(req, res, next) {
   try {
-    const [totalTasks, todoCount, inprogressCount, completedCount] =
-      await Promise.all([
-        prisma.task.count(),
-        prisma.task.count({ where: { status: "pending" } }),
-        prisma.task.count({ where: { status: "inprogress" } }),
-        prisma.task.count({ where: { status: "done" } }),
-      ]);
+    const userId = Number(req.user.id);
+
+    const aggregation = await prisma.project.groupBy({
+      by: ["ownerId"],
+      where: { ownerId: userId },
+      _count: {
+        id: true,
+        tasks: {
+          where: { status: "pending" },
+        },
+      },
+      _sum: {
+        tasks: {
+          _count: true,
+        },
+      },
+    });
+
+    if (aggregation.length === 0) {
+      return res.json({
+        totalTasks: 0,
+        todo: 0,
+        inprogress: 0,
+        completed: 0,
+        pending: 0,
+        progressPercent: 0,
+        projectCount: 0,
+      });
+    }
+
+    const userAgg = aggregation[0];
+
+    const [inprogressCount, completedCount] = await Promise.all([
+      prisma.task.count({
+        where: {
+          project: { ownerId: userId },
+          status: "inprogress",
+        },
+      }),
+      prisma.task.count({
+        where: {
+          project: { ownerId: userId },
+          status: "done",
+        },
+      }),
+    ]);
+
+    const totalTasks = userAgg._sum.tasks?._count || 0;
+    const todoCount = userAgg._count.tasks || 0;
 
     const pending = todoCount + inprogressCount;
     const progressPercent =
@@ -40,6 +80,7 @@ export async function getDashboardTasks(req, res, next) {
       completed: completedCount,
       pending,
       progressPercent,
+      projectCount: userAgg._count.id,
     });
   } catch (err) {
     next(err);
